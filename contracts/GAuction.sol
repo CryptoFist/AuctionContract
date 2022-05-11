@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IStruct.sol";
+import "hardhat/console.sol";
 
 contract GAuction is ReentrancyGuard, Ownable, IStruct {
    using Counters for Counters.Counter;
@@ -16,6 +17,14 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
    uint8 private immutable AUCTION_ON = 0;
    uint8 private immutable AUCTION_FINISHED = 1;
    uint8 private immutable AUCTION_CLAIMED = 2;
+
+   event StartAuction(
+      address maker,
+      address tokenAddress,
+      uint256 tokenID,
+      uint256 floorPrice,
+      uint256 blockNo
+   );
 
    function startAuction(
       address tokenAddress_,
@@ -34,6 +43,7 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
          maker: msg.sender,
          tokenAddress: tokenAddress_,
          topBider: address(0),
+         auctionID: auctions.length,
          tokenID: tokenID_,
          floorPrice: floorPrice_,
          blockNo: blockNo_,
@@ -42,6 +52,14 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
       }));
 
       auctionCount.increment();
+
+      emit StartAuction(
+         msg.sender,
+         tokenAddress_,
+         tokenID_,
+         floorPrice_,
+         blockNo_
+      );
    }
 
    function cancelAuction(uint256 auctionID_) external {
@@ -49,7 +67,7 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
       Auction memory auction = auctions[auctionID_];
       require (auction.maker == msg.sender, 'no permission');
       require (auction.auctionStatus == AUCTION_ON, 'already finished');
-      require (auction.topBider == address(0), 'can not cancel');
+      require (auction.topBider == address(0), 'biders exist');
       
       if (auction.blockNo < block.number) {
          auction.auctionStatus = AUCTION_FINISHED;
@@ -67,9 +85,8 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
       Auction memory auction = auctions[auctionID_];
       require (auction.auctionStatus == AUCTION_ON, 'already finished');
       
-      if (auction.blockNo <= block.number) {
-         auction.auctionStatus = AUCTION_FINISHED;
-         revert ('finished auction');
+      if (auction.blockNo >= block.number) {
+         revert ('not finished auction');
       }
 
       IERC721 token = IERC721(auction.tokenAddress);
@@ -79,6 +96,8 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
          } else {
             token.transferFrom(address(this), auction.maker, auction.tokenID);   
             payable(auction.topBider).transfer(auction.topBidAmount);
+            auctions[auctionID_].auctionStatus = AUCTION_CLAIMED;
+            return;
          }
       } else {
          token.transferFrom(address(this), auction.maker, auction.tokenID);
@@ -104,10 +123,10 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
 
    function bidAuction(uint256 auctionID_) external payable nonReentrant {
       require (auctions.length > auctionID_, 'wrong auction ID');
-      Auction memory auction = auctions[auctionID_];
+      Auction storage auction = auctions[auctionID_];
       require (auction.maker != msg.sender, 'sender is maker');
       require (auction.auctionStatus == AUCTION_ON, 'already finished');
-      require (auction.blockNo <= block.number, 'finished auction');
+      require (auction.blockNo >= block.number, 'finished auction');
 
       require (auction.topBidAmount < msg.value, 'wrong bid amount');
       if (auction.topBider != address(0)) {
@@ -116,5 +135,26 @@ contract GAuction is ReentrancyGuard, Ownable, IStruct {
 
       auction.topBidAmount = msg.value;
       auction.topBider = msg.sender;
+   }
+
+   function getAuctions() external view returns(Auction[] memory) {
+      Auction[] memory surviveAuction = new Auction[](auctionCount.current());
+
+      uint256 cnt = 0;
+      uint56 index = 0;
+      for (uint256 i = 0; i < auctions.length; i ++) {
+         if (auctions[i].blockNo >= block.number && auctions[i].auctionStatus == AUCTION_ON) {
+            surviveAuction[index ++] = auctions[i];
+            cnt ++;
+         }
+      }
+
+      Auction[] memory resp = new Auction[](cnt);
+
+      for (uint256 i = 0; i < cnt; i ++) {
+         resp[i] = surviveAuction[i];
+      }
+
+      return resp;
    }
 }

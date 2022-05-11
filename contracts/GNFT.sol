@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./interfaces/IGNFT.sol";
+import "hardhat/console.sol";
 
 contract GNFT is ERC721, Ownable, ReentrancyGuard, IGNFT {
    mapping(uint256 => string) private tokenURIs;
@@ -15,6 +16,13 @@ contract GNFT is ERC721, Ownable, ReentrancyGuard, IGNFT {
    address private fundAddress;
    Counters.Counter tokenIDs;
    uint256 private mintPrice;
+
+   event mint(
+      address minter,
+      string tokenURI,
+      uint256 tokenID
+   );
+
    constructor (uint256 mintPrice_) ERC721('Gelom NFT', 'GNFT') {
       mintPrice = mintPrice_;
       fundAddress = msg.sender;
@@ -32,11 +40,12 @@ contract GNFT is ERC721, Ownable, ReentrancyGuard, IGNFT {
       string calldata tokenURI_
    ) external payable nonReentrant override {
 		require(msg.value >= mintPrice, "Insufficient value");
-
       uint256 newID = tokenIDs.current();
       _mint(msg.sender, newID);
       tokenIDs.increment();
       tokenURIs[newID] = tokenURI_;
+
+      emit mint(msg.sender, tokenURI_, newID);
    }
 
    function withDraw() external override {

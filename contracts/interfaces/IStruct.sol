@@ -6,6 +6,7 @@ interface IStruct {
       address maker;
       address tokenAddress;
       address topBider;
+      uint256 auctionID;
       uint256 tokenID;
       uint256 floorPrice;
       uint256 blockNo;
